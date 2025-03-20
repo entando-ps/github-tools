@@ -1,0 +1,57 @@
+#!/bin/bash
+
+echo "~> GH_PR_TITLE: $GH_PR_TITLE"
+echo "~> GH_PR_NUMBER: $GH_PR_NUMBER"
+
+if [ "$1" != "clean" ]; then
+
+  PRJ_VERSION="$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)"
+  echo "~> FOUND VERSION: $PRJ_VERSION"
+
+  ARTIFACT_VERSION="$(.github/github-tools/artifact.version.generate "$PRJ_VERSION" "$GH_PR_TITLE" "$GH_PR_NUMBER" "$GH_PR_RUN_NUMBER")"
+
+  [ -z "$ARTIFACT_VERSION" ] && {
+      echo "::error::Unable to determine the artifact version, please check the PR TITLE"
+      exit 99
+  }
+
+  if [[ "$ARTIFACT_VERSION" = *"-PR-"* ]]; then
+    ARTIFACT_PUB_TYPE="snapshot"
+  else
+    ARTIFACT_PUB_TYPE="release"
+  fi
+
+  GH_PR_LABELS=$(gh pr view "$GH_PR_NUMBER" --json labels --jq '.labels | map(.name) | join(",")' | tr -d '"')
+  SKIP_TESTS=false;
+  if [[ ",$GH_PR_LABELS," == *",skip-tests,"* || ",$GH_PR_LABELS," == *",skip-tests-once,"* ]]; then
+    SKIP_TESTS=true
+  fi
+
+  if [[ ",$GH_PR_LABELS," == *"-once,"* ]]; then
+    echo "CLEANUP=true" >> "$GITHUB_OUTPUT"
+  fi
+
+  if [[ ",$GH_PR_LABELS," == *",verbose,"* || ",$GH_PR_LABELS," == *",verbose-once,"* ]]; then
+    VERBOSE=true
+    echo ""
+    echo "~> PR INFO:"
+    gh pr view "$GH_PR_NUMBER"
+  fi
+
+  echo ""
+
+  CONFIGURED_VARS+=("PRJ_VERSION" "ARTIFACT_VERSION" "ARTIFACT_PUB_TYPE" "SKIP_TESTS" "GH_PR_LABELS" "VERBOSE")
+
+else
+
+  echo "-> Removing the one-time labels"
+  
+  GH_PR_LABELS=$(gh pr view "$GH_PR_NUMBER" --json labels --jq '.labels | map(.name) | join(",")' | tr -d '"')
+
+  while read -r -d , L; do
+    if [[ "$L" == *"-once" ]]; then
+      gh pr edit "$GH_PR_NUMBER" --remove-label "$L" || true
+    fi
+  done <<< "${GH_PR_LABELS},";
+  
+fi

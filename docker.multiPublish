@@ -1,0 +1,30 @@
+#!/bin/bash
+
+set -e
+
+images="$1";shift
+artifactVersion="$1";shift
+registryOrg="$1";shift
+registryUrl="$1";shift
+registryUser="$1";shift
+registryPass="$1";shift
+artifactPubType="$1";shift
+
+MSG=$'**PUBLISHED:**\n'
+MSG+=$'```\n'
+while IFS=':' read -r -d , F N; do
+  I="$registryOrg/$N:$artifactVersion"
+  echo "-> Publishing docker image \"$I\""
+
+  .github/github-tools/docker.publish \
+    "$I" "$registryUrl" "$registryUser" "$registryPass" "$artifactPubType"
+
+  MSG+="IMG/TAG: $I"$'\n'
+  MSG+="IMG/SHA: $(docker inspect --format='{{index .RepoDigests 0}}' "$I")"$'\n'
+  MSG+="~~~"$'\n'
+done <<< "${images},"
+MSG+=$'```\n'
+
+if [ "$GH_DO_COMMENT" = "true" ]; then
+  gh pr comment $GH_PR_NUMBER --body $"$MSG"
+fi

@@ -1,0 +1,23 @@
+#!/bin/bash
+
+set -e
+
+images="$1";shift
+artifactVersion="$1";shift
+registryOrg="$1";shift
+
+MSG=$'**BUILT:**\n'
+MSG+=$'```\n'
+while IFS=':' read -r -d , F N; do
+  I="$registryOrg/$N:$artifactVersion"
+  echo "-> Building docker image \"$I\""
+
+  docker build -t "$I" --build-arg VERSION="$artifactVersion" -f "$F" .
+
+  MSG+="IMG: $I"$'\n'
+done <<< "${images},"
+MSG+=$'```\n'
+
+if [ "$GH_DO_COMMENT" = "true" ]; then
+  gh pr comment $GH_PR_NUMBER --body $"$MSG"
+fi
