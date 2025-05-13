@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+
+import unittest
+import re
+import sys
+
+def parse_version_string(version_string):
+    """Parses a version string into its component parts."""
+
+    fix_match = re.match(r"(v)?(\d+\.\d+(?:\.\d+)?)-fix\.(\d+)", version_string)
+    if fix_match:
+        v_prefix = fix_match.group(1) or ""
+        version = fix_match.group(2) + "-fix." + fix_match.group(3)
+        return v_prefix, version, "", "", ""
+
+    esb_pr_match = re.match(r"(v)?(\d+\.\d+(?:\.\d+)?)-([A-Za-z0-9-]+)-PR(\d+)", version_string)
+    if esb_pr_match:
+        v_prefix = esb_pr_match.group(1) or ""
+        version = esb_pr_match.group(2)
+        middle_part = esb_pr_match.group(3)
+        pr_number = esb_pr_match.group(4)
+        return v_prefix, version, middle_part, "PR", int(pr_number)
+
+    esb_match = re.match(r"(v)?(\d+\.\d+(?:\.\d+)?)-([A-Za-z0-9-]+)", version_string)
+    if esb_match:
+        v_prefix = esb_match.group(1) or ""
+        version = esb_match.group(2)
+        middle_part = esb_match.group(3)
+        return v_prefix, version, middle_part, "", ""
+
+    return None
+
+class TestParseVersionString(unittest.TestCase):
+
+    def test_full_version_string(self):
+        version_string = "v7.4.0-ESB-357-PR1"
+        expected_result = ("v", "7.4.0", "ESB-357", "PR", 1)
+        self.assertEqual(parse_version_string(version_string), expected_result)
+
+    def test_version_string_without_v_prefix(self):
+        version_string = "7.4.0-ESB-357-PR1"
+        expected_result = ("", "7.4.0", "ESB-357", "PR", 1)
+        self.assertEqual(parse_version_string(version_string), expected_result)
+
+    def test_version_string_without_pr(self):
+        version_string = "v7.4.0-ESB-357"
+        expected_result = ("v", "7.4.0", "ESB-357", "", "")
+        self.assertEqual(parse_version_string(version_string), expected_result)
+
+    def test_version_string_without_v_prefix_and_pr(self):
+        version_string = "7.4.0-ESB-357"
+        expected_result = ("", "7.4.0", "ESB-357", "", "")
+        self.assertEqual(parse_version_string(version_string), expected_result)
+
+    def test_invalid_version_string(self):
+        version_string = "invalid-version"
+        self.assertIsNone(parse_version_string(version_string))
+
+    def test_alternate_form(self):
+        version_string = "v7.4.0-fix.1"
+        expected_result = ("v", "7.4.0-fix.1", "", "", "")
+        self.assertEqual(parse_version_string(version_string), expected_result)
+
+    def test_alternate_form_no_v(self):
+        version_string = "7.4.0-fix.1"
+        expected_result = ("", "7.4.0-fix.1", "", "", "")
+        self.assertEqual(parse_version_string(version_string), expected_result)
+
+if __name__ == '__main__':
+    if "--test" in sys.argv:
+        unittest.main(argv=['first-arg-is-ignored'], exit=False)
+    elif len(sys.argv) > 1:
+        input_string = sys.argv[1]
+        result = parse_version_string(input_string)
+        if result:
+            v, ver, middle, pr, num = result
+            print(f"{v}")
+            print(f"{ver}")
+            print(f"{middle}")
+            print(f"{pr}")
+            print(f"{num}")
+        else:
+            print("Invalid version string.")
+    else:
+        print("Usage: python script.py <version_string> or python script.py --test")

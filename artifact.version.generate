@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+
+import unittest
+import re
+import argparse
+import sys
+
+def generate_output(version: str, message: str, serial: int, run_number: int | None = None) -> str:
+
+    match = re.search(r"([a-zA-Z]+-\d+)", message)
+    if not match:
+        return "Error: No valid ticket ID found in message."
+
+    ticket_id = match.group(1)
+    version = strip_version(version)
+    if version is None:  # Handle potential None from strip_version
+        return "Error: Invalid version format."
+
+    output = f"{version}-{ticket_id}-PR{serial}"
+    if run_number is not None:
+        output += f"-BN{run_number}"
+    return output
+
+def strip_version(version_string: str) -> str | None:
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:-.*)?$", version_string)
+    if match:
+        return "{0}.{1}.{2}".format(match.group(1), match.group(2), match.group(3))
+    return None
+
+class TestGenerateOutput(unittest.TestCase):
+
+    def test_valid_input(self):
+        self.assertEqual(generate_output("1.2.3", "ABC-121 test", 999), "1.2.3-ABC-121-PR999")
+        self.assertEqual(generate_output("2.0.0", "XYZ-987 another", 123), "2.0.0-XYZ-987-PR123")
+        self.assertEqual(generate_output("1.1.1", "  JKL-321  ", 1), "1.1.1-JKL-321-PR1")
+        self.assertEqual(generate_output("1.1.1-SNAPSHOT", "  JKL-321  ", 1), "1.1.1-JKL-321-PR1")
+        self.assertEqual(generate_output("1.1.1-fix.1", "  JKL-321  ", 1), "1.1.1-JKL-321-PR1")
+
+    def test_no_ticket_id(self):
+        self.assertEqual(generate_output("1.0.0", "NoTicketHere", 456), "Error: No valid ticket ID found in message.")
+        self.assertEqual(generate_output("3.2.1", "", 789), "Error: No valid ticket ID found in message.")
+
+    def test_invalid_ticket_format(self):
+        self.assertEqual(generate_output("1.1.1", "invalid-format", 222), "Error: No valid ticket ID found in message.")
+
+    def test_with_run_number(self):
+        self.assertEqual(generate_output("1.2.3", "ABC-121 test", 999, 123), "1.2.3-ABC-121-PR999-BN123")
+        self.assertEqual(generate_output("2.0.0", "XYZ-987 another", 123, 456), "2.0.0-XYZ-987-PR123-BN456")
+        self.assertEqual(generate_output("1.1.1-SNAPSHOT", "JKL-321", 1, 789), "1.1.1-JKL-321-PR1-BN789")
+
+    def test_invalid_version(self):  # New test case for invalid version format
+        self.assertEqual(generate_output("1.2", "ABC-121 test", 999), "Error: Invalid version format.")
+        self.assertEqual(generate_output("a.b.c", "ABC-121 test", 999), "Error: Invalid version format.")
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate a string from version, message, serial, and an optional run number.")
+
+    parser.add_argument("--test", action="store_true", help="Run unit tests")
+    parser.add_argument("version", type=str, nargs='?', help="The semantic version string (e.g., 1.2.3)")
+    parser.add_argument("message", type=str, nargs='?', help="The message containing the ticket ID (e.g., ABC-121 test)")
+    parser.add_argument("serial", type=int, nargs='?', help="The sequential serial number")
+    parser.add_argument("run_number", type=int, nargs='?', help="An optional run number") # Positional and optional
+
+    args = parser.parse_args()
+
+    if args.test:
+        print("Running unit tests...")
+        suite = unittest.TestLoader().loadTestsFromTestCase(TestGenerateOutput)
+        unittest.TextTestRunner(verbosity=2).run(suite)
+        return
+
+    if args.version is None or args.message is None or args.serial is None:
+        parser.error("The version, message, and serial arguments are required unless --test is used.")
+
+    # No need for separate validation; strip_version and generate_output handle it.
+    result = generate_output(args.version, args.message, args.serial, args.run_number)
+    print(result)
+
+if __name__ == "__main__":
+    main()

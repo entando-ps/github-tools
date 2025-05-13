@@ -1,0 +1,5 @@
+#!/bin/bash
+
+set -e
+
+mvn org.apache.maven.plugins:maven-surefire-report-plugin:report-only -Daggregate=true -DshowSuccess=false

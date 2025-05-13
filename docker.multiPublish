@@ -1,0 +1,40 @@
+#!/bin/bash
+
+. .github/github-tools/lib.sh
+
+set -e
+
+images="$1";shift
+artifactVersion="$1";shift
+registryOrg="$1";shift
+registryUrl="$1";shift
+registryUser="$1";shift
+registryPass="$1";shift
+artifactPubType="$1";shift
+
+MSG=$'**PUBLICATION'
+if [ "$GH_COMMIT_ID" != "-" ]; then
+  MSG+=" for COMMIT ID \`${GH_COMMIT_ID}\`";
+fi
+MSG+=$'**\n';
+
+while IFS=':' read -r -d , F N; do
+  MSG+=$'```\n'
+  I="$registryOrg/$N:$artifactVersion"
+  .github/github-tools/docker.publish \
+    "$I" "$registryUrl" "$registryUser" "$registryPass" "$artifactPubType"
+
+  MSG+="IMG/TAG: $I"$'\n'
+  MSG+="IMG/SHA: $(docker inspect --format='{{index .RepoDigests 0}}' "$I")"$'\n'
+  MSG+=$'```\n'
+done <<< "${images},"
+
+if [ "$GH_DO_COMMENT" = "true" ]; then
+  if [ -n "$GH_PR_NUMBER" ]; then
+    # CASE: PR BUILD
+    gh pr comment $GH_PR_NUMBER --body $"$MSG"
+  else
+    # CASE: RELEASE TAG BUILD
+    echo "::notice::$MSG"
+  fi
+fi
