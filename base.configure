@@ -32,7 +32,7 @@ else
   echo "~> GH_PR_TITLE: $GH_PR_TITLE"
   echo "~> GH_PR_NUMBER: $GH_PR_NUMBER"
 
-  PRJ_VERSION="$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)"
+  PRJ_VERSION="$(.github/github-tools/prj.version.determine)"
   echo "~> Version on POM: $PRJ_VERSION"
 
   ARTIFACT_VERSION="$(.github/github-tools/artifact.version.generate "$PRJ_VERSION" "$GH_PR_TITLE" "$GH_PR_NUMBER")"

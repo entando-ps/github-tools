@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -e
+
+if [ -f pom.xml ]; then
+  mvn help:evaluate -Dexpression=project.version -q -DforceStdout
+elif [ -f package.json ]; then
+  npm pkg get version --workspaces=false | tr -d '"'
+elif [ -f Cargo.toml ]; then
+  cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | .version'
+fi
