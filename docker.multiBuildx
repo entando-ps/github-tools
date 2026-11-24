@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# Multi-platform variant of docker.multiBuild, based on docker buildx.
+#
+# Usage:
+#   docker.multiBuildx <images> <artifactVersion> <registryOrg> [platforms]
+#
+#   images     "Dockerfile:image-name,Dockerfile2:image-name2"
+#   platforms  comma separated list; defaults to $DOCKER_PLATFORMS,
+#              then to linux/amd64,linux/arm64
+#
+# Every image is built for every platform. The result stays in the buildx
+# builder cache, so docker.multiPublishx pushes it without rebuilding.
+#
+# With DOCKER_LOAD=true each platform is also loaded into the local image
+# store as "<registryOrg>/<image-name>:<artifactVersion>-<arch>"
+# (e.g. "-amd64", "-arm64"), so it can be smoke tested with
+# "docker run --platform <platform> ...".
+#
+# Requires a buildx builder able to build the requested platforms
+# (docker/setup-qemu-action + docker/setup-buildx-action on GitHub Actions).
+
+. .github/github-tools/docker.buildx.lib.sh
+
+set -e
+
+images="$1";shift
+artifactVersion="$1";shift
+registryOrg="$1";shift
+platforms="$(buildx.platforms "${1:-}")"
+
+buildx.assertPlatforms "$platforms"
+
+MSG=$'**BUILT:**\n'
+MSG+=$'```\n'
+while IFS=':' read -r -d , F N; do
+  I="$registryOrg/$N:$artifactVersion"
+  echo "-> Building docker image \"$I\" for \"$platforms\""
+
+  docker buildx build \
+    --platform "$platforms" \
+    --provenance=false \
+    --build-arg VERSION="$artifactVersion" \
+    -t "$I" \
+    -f "$F" \
+    .
+
+  if [ "$DOCKER_LOAD" = "true" ]; then
+    IFS=',' read -r -a plist <<< "$platforms"
+    for P in "${plist[@]}"; do
+      L="$I-$(buildx.archOf "$P")"
+      echo "-> Loading \"$L\" ($P) into the local image store"
+      docker buildx build \
+        --platform "$P" \
+        --provenance=false \
+        --build-arg VERSION="$artifactVersion" \
+        -t "$L" \
+        -f "$F" \
+        --load \
+        .
+    done
+  fi
+
+  MSG+="IMG: $I ($platforms)"$'\n'
+done <<< "${images},"
+MSG+=$'```\n'
+
+if [ "$GH_DO_COMMENT" = "true" ]; then
+  gh pr comment $GH_PR_NUMBER --body $"$MSG"
+fi
