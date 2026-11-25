@@ -1,0 +1,94 @@
+#!/bin/bash
+
+# Multi-platform variant of docker.multiPublish, based on docker buildx.
+#
+# Usage:
+#   docker.multiPublishx <images> <artifactVersion> <registryOrg> <registryUrl> \
+#                        <registryUser> <registryPass> <artifactPubType> [platforms]
+#
+# Same arguments as docker.multiPublish, plus the optional platform list
+# (see docker.multiBuildx). Each image is pushed as a single multi-platform
+# manifest list under "<registryUrl>/<registryOrg>/<image-name>:<artifactVersion>".
+#
+# When it runs after docker.multiBuildx in the same job, the build comes
+# from the builder cache, so nothing is rebuilt.
+#
+# As in docker.publish, a "release" publication refuses to overwrite an
+# existing tag.
+
+. .github/github-tools/lib.sh
+. .github/github-tools/docker.buildx.lib.sh
+
+set -e
+
+images="$1";shift
+artifactVersion="$1";shift
+registryOrg="$1";shift
+registryUrl="$1";shift
+registryUser="$1";shift
+registryPass="$1";shift
+artifactPubType="$1";shift
+platforms="$(buildx.platforms "${1:-}")"
+
+buildx.assertPlatforms "$platforms"
+
+docker login ${registryUrl:+"$registryUrl"} --username="$registryUser" --password-stdin <<<"$registryPass"
+
+metadataFile="$(mktemp)"
+trap 'rm -f "$metadataFile"' EXIT
+
+MSG=$'**PUBLICATION'
+if [ "$GH_COMMIT_ID" != "-" ]; then
+  MSG+=" for COMMIT ID \`${GH_COMMIT_ID}\`";
+fi
+MSG+=$'**\n';
+
+while IFS=':' read -r -d , F N; do
+  I="$registryOrg/$N:$artifactVersion"
+  imageFullUrl="${registryUrl:+$registryUrl/}$I"
+
+  echo "~> Publishing image \"$imageFullUrl\" for \"$platforms\""
+  echo "~"
+
+  if [ "$artifactPubType" = "release" ]; then
+    docker buildx imagetools inspect "$imageFullUrl" &>/dev/null && {
+      echo "::error::Refusing to overwrite a release image (\"$imageFullUrl\")"
+      exit 101
+    }
+  fi
+
+  docker buildx build \
+    --platform "$platforms" \
+    --provenance=false \
+    --build-arg VERSION="$artifactVersion" \
+    -t "$imageFullUrl" \
+    -f "$F" \
+    --metadata-file "$metadataFile" \
+    --push \
+    .
+
+  digest="$(jq -r '."containerimage.digest" // empty' "$metadataFile")"
+  [ -n "$digest" ] || {
+    echo "::error::Unable to determine the digest of \"$imageFullUrl\""
+    exit 102
+  }
+
+  echo "~"
+  echo "~> Image digest: $digest"
+
+  MSG+=$'```\n'
+  MSG+="IMG/TAG: $I"$'\n'
+  MSG+="IMG/SHA: ${imageFullUrl%:*}@$digest"$'\n'
+  MSG+="IMG/PLATFORMS: $platforms"$'\n'
+  MSG+=$'```\n'
+done <<< "${images},"
+
+if [ "$GH_DO_COMMENT" = "true" ]; then
+  if [ -n "$GH_PR_NUMBER" ]; then
+    # CASE: PR BUILD
+    gh pr comment $GH_PR_NUMBER --body $"$MSG"
+  else
+    # CASE: RELEASE TAG BUILD
+    echo "::notice::$MSG"
+  fi
+fi
